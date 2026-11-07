@@ -1,0 +1,103 @@
+@startuml 01-dfd-level0-intermediate
+title DFD уровня 0: потоки данных промежуточного состояния (3 месяца)
+
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam defaultFontSize 12
+skinparam ArrowFontSize 10
+skinparam package {
+  BorderColor #888888
+  FontStyle normal
+}
+skinparam rectangle {
+  BackgroundColor<<внешняя>> #F0EFEC
+  BackgroundColor<<fu>> #E7F1FB
+  BackgroundColor<<rb>> #F9ECE7
+  BackgroundColor<<новый>> #E5F4E4
+  BackgroundColor<<аналитика>> #F9EEDA
+}
+skinparam database {
+  BackgroundColor<<аналитика>> #F9EEDA
+  BackgroundColor<<rb>> #F9ECE7
+}
+
+rectangle "Клиенты\nи каналы обслуживания" as clients <<внешняя>>
+rectangle "Менеджеры,\nфинансовый департамент" as users <<внешняя>>
+rectangle "Банк России\n(регуляторная отчётность)" as cbr <<внешняя>>
+
+package "FinUnion" {
+  rectangle "CRM FinUnion\n(FU CRM)" as fu_crm <<fu>>
+  rectangle "Core Banking FinUnion\n(FU Core)" as fu_core <<fu>>
+  rectangle "Card Processing FinUnion\n(FU Cards)" as fu_cards <<fu>>
+  rectangle "Loan System FinUnion\n(FU Loans)" as fu_loans <<fu>>
+}
+
+package "RetailBank" {
+  rectangle "CRM RetailBank\n(RB CRM)" as rb_crm <<rb>>
+  rectangle "Core Banking RetailBank\n(RB Core)" as rb_core <<rb>>
+  rectangle "Card Processing RetailBank\n(RB Cards)" as rb_cards <<rb>>
+  rectangle "Loan System RetailBank\n(RB Loans)" as rb_loans <<rb>>
+  database "RB DWH\n(до переноса отчётности RB)" as rb_dwh <<rb>>
+}
+
+package "Компоненты промежуточного состояния" {
+  rectangle "Integration Layer\nESB FinUnion + CDC + брокер событий\n+ API-адаптеры к системам RB\n--\nValidate (схема, контракт)" as il <<новый>>
+  rectangle "MDM Customer Hub\n--\nValidate, Enrich, Create, Update,\nDelete (логическое)" as mdm <<новый>>
+  rectangle "DataHub\n(каталог данных и lineage)\n--\nRead" as datahub <<новый>>
+}
+
+package "Аналитический контур" {
+  database "DWH\n(консолидированное, на базе FU DWH)\n--\nValidate, Aggregate" as dwh <<аналитика>>
+  rectangle "BI\n(единая управленческая отчётность)\n--\nRead, Aggregate" as bi <<аналитика>>
+}
+
+' ---- Возникновение данных ----
+clients --> fu_crm : "Анкеты, обращения [C, U]"
+clients --> rb_crm : "Анкеты, обращения [C, U]"
+clients --> fu_core : "Платежи [C]"
+clients --> rb_core : "Платежи [C]"
+
+' ---- Существующие операционные потоки ----
+fu_cards --> fu_core : "21 Карточные операции [C]"
+rb_cards --> rb_core : "21 Карточные операции [C]"
+fu_loans --> fu_core : "22 Проводки по кредитам [C]"
+rb_loans --> rb_core : "22 Проводки по кредитам [C]"
+
+' ---- Обмен систем с Integration Layer (▶ в IL, ◀ из IL) ----
+fu_crm <--> il : "▶ 1 Клиент [C, U]\n▶ 9 Поиск клиента [R]\n▶ 10 Портфель клиента RB [R]\n▶ 11 Продукты FU для клиента RB [C]\n▶ 13 Обращения [R]\n◀ 6 Золотая запись [U, E]"
+rb_crm <--> il : "▶ 2 Клиент [C, U] (CDC)\n▶ 15 Обращения [R]\n◀ 6 Единый идентификатор [E]"
+fu_core <--> il : "▶ 3 Клиент [C, U] (CDC)\n▶ 13 Договоры, счета, операции, платежи [R]\n◀ 7 Единый идентификатор [E]\n◀ 11 Договор, счёт для клиента RB [C]"
+rb_core <--> il : "▶ 4 Клиент [C, U] (CDC)\n▶ 14 Договоры, счета, операции, платежи [R] (CDC)\n◀ 10 Счета клиента [R]"
+fu_cards <--> il : "▶ 5 Держатели [U]\n▶ 12 Продукты, тарифы [R]\n▶ 13 Карты [R]\n◀ 11 Карта для клиента RB [C]"
+rb_cards <--> il : "▶ 5 Держатели [U]\n▶ 12 Продукты, тарифы [R]\n▶ 15 Карты [R]\n◀ 10 Карты клиента [R]"
+fu_loans <--> il : "▶ 5 Заёмщики, связи [U]\n▶ 12 Продукты, тарифы [R]\n▶ 13 Кредиты [R]\n◀ 11 Кредит для клиента RB [C]"
+rb_loans <--> il : "▶ 5 Заёмщики, связи [U]\n▶ 12 Продукты, тарифы [R]\n▶ 15 Кредиты [R]\n◀ 10 Кредиты клиента [R]"
+
+il <--> mdm : "▶ 1–5 Клиент [C, U]\n▶ 9 Запрос профиля [R]\n▶ 12 Справочники [R]\n◀ 6, 7 Единый идентификатор, золотая запись [U, E]\n◀ 8 Расклейка, отзыв согласия [D]"
+
+' ---- Аналитический контур ----
+il --> dwh : "13–15 Соглашения, операции,\nплатежи, обращения [R, V]"
+mdm --> dwh : "16 Золотая запись, кросс-ссылки,\nсоответствия справочников [E]"
+rb_core --> rb_dwh : "24 Выгрузки для отчётности RB [R]"
+rb_dwh --> dwh : "17 История RB,\nконтрольные итоги [R, V]"
+dwh --> bi : "18 Витрины [A]"
+bi --> users : "Отчёты [R]"
+dwh --> cbr : "19 Отчётность FinUnion [A]"
+rb_dwh --> cbr : "20 Отчётность RetailBank [A]"
+
+' ---- Метаданные ----
+il ..> datahub : "23 Схемы, lineage потоков [R]"
+mdm ..> datahub : "23 Модель, качество [R]"
+dwh ..> datahub : "23 Lineage, качество [R]"
+
+legend right
+  Действия: C — Create, R — Read, U — Update, D — Delete,
+  E — Enrich, V — Validate, A — Aggregate
+  Номер — номер потока в data-flows.md
+  ▶ — в Integration Layer (в MDM), ◀ — обратно в систему
+  В блоке компонента — действия, выполняемые внутри него
+  Пунктир — поток метаданных
+  Цвет: голубой — FinUnion, оранжевый — RetailBank,
+  зелёный — новые компоненты, жёлтый — аналитика
+endlegend
+@enduml
