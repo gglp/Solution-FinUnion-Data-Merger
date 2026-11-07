@@ -22,7 +22,7 @@ FinUnion Group приобрела региональный RetailBank. У каж
 
 | № | Файл | Нотация | Содержание |
 | --- | --- | --- | --- |
-| 1 | [diagrams/logical-data-model.puml](diagrams/01-logical-data-model.puml) | ERD (PlantUML) | Логическая модель ключевых сущностей |
+| 1 | [diagrams/logical-data-model.puml](diagrams/logical-data-model.puml) | ERD (PlantUML) | Логическая модель ключевых сущностей |
 
 ## Ключевые решения
 
